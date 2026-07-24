@@ -1,0 +1,172 @@
+/* overlay.css */
+.lyricflow-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  min-width: 200px;
+  min-height: 120px;
+ 
+  background-color: #1e1e1e;
+  color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  border: 1px solid #333;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  user-select: none; /* Prevent text selection while dragging */
+  -webkit-user-select: none; 
+}
+
+.lyricflow-header.is-draggable {
+  cursor: grab;
+}
+.lyricflow-header.is-draggable:active {
+  cursor: grabbing;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: se-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.3;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+
+.resize-handle:hover {
+  opacity: 1;
+}
+
+/* Hide the resize handle completely when in Lock Mode */
+.lyricflow-container.is-locked .resize-handle {
+  display: none;
+}
+
+.lyricflow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background-color: #2a2a2a;
+  font-size: 13px;
+  font-weight: 600;
+  color: #aaa;
+  border-bottom: 1px solid #333;
+}
+
+.header-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.control-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  padding: 0;
+}
+
+.control-btn:hover {
+  opacity: 1;
+}
+
+
+/* --- TRANSPARENT MODE --- */
+.lyricflow-container.is-transparent {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.lyricflow-container.is-transparent .lyricflow-header {
+  background-color: rgba(0, 0, 0, 0.4); /* Keep header slightly visible */
+  border-bottom-color: transparent;
+  border-radius: 8px; /* Round it out since the main container border is gone */
+}
+
+/* Add shadows so white lyrics are readable over white websites */
+.lyricflow-container.is-transparent .lyricflow-current,
+.lyricflow-container.is-transparent .lyricflow-next {
+  text-shadow: 0px 2px 6px rgba(0,0,0,0.9), 0px 1px 2px rgba(0,0,0,0.8);
+}
+
+/* --- LOCKED MODE (CLICK-THROUGH) --- */
+.lyricflow-container.is-locked {
+  pointer-events: none; /* ALL clicks pass through to the website behind it */
+}
+
+.lyricflow-container.is-locked .lyricflow-header {
+  opacity: 0.3; /* Visually indicate it is locked */
+  transition: opacity 0.3s;
+}
+
+.lyricflow-container.is-locked:hover .lyricflow-header {
+  opacity: 0.8; /* Reveal slightly when hovered so they can find the unlock button */
+}
+
+/* CRITICAL: Re-enable clicking ONLY for the lock button so they can unlock it */
+.lyricflow-container.is-locked .lock-btn {
+  pointer-events: auto; 
+  opacity: 1; 
+}
+
+
+/* Locked height wrapper to prevent vertical layout snapping */
+.lyric-body {
+  padding: 14px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 85px;
+  overflow: hidden;
+  transition: opacity 300ms ease;
+}
+
+.lyricflow-current {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #1DB954; /* Spotify Green Accent */
+}
+
+.lyricflow-next {
+  font-size: 15px;
+  color: #888888;
+  font-weight: 400;
+  line-height: 1.4;
+  opacity: 1;
+}
+
+/* --- ANIMATIONS --- */
+
+.fade-in-line {
+  animation: smoothFadeIn 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes smoothFadeIn {
+  from {
+    opacity: 0.9;
+    transform: translateY(0.5px);
+    filter: blur(0.3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
