@@ -3,23 +3,26 @@ import { createRoot } from 'react-dom/client';
 import type { SyncPayload } from '../types';
 import styles from './overlay.css?inline';
 
-const PRE_ROLL_OFFSET_MS = 1400; 
+const PRE_ROLL_OFFSET_MS = 1400;
 
 const OverlayApp = () => {
   const [data, setData] = useState<SyncPayload | null>(null);
   const portRef = useRef<chrome.runtime.Port | null>(null);
+  const [currentDomain, setCurrentDomain] = useState<string | null>(null);
   const prevTrackRef = useRef<string>('');
 
-  // Local UI State for 60fps Dragging & Resizing
+  // Local UI State for Dragging & Resizing
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [localPos, setLocalPos] = useState({ x: 20, y: 20 });
   const [localSize, setLocalSize] = useState({ width: 380, height: 120 });
-  
+
   const dragStartOffset = useRef({ x: 0, y: 0 });
   const resizeStartRef = useRef({ startWidth: 0, startHeight: 0, startX: 0, startY: 0 });
 
+
   useEffect(() => {
+    setCurrentDomain(window.location.hostname);
     const connectPort = () => {
       const port = chrome.runtime.connect({ name: 'overlay' });
       portRef.current = port;
@@ -39,6 +42,7 @@ const OverlayApp = () => {
     return () => { if (portRef.current) portRef.current.disconnect(); };
   }, []);
 
+
   // Sync local states with global worker settings ONLY when not interacting
   useEffect(() => {
     if (!isDragging && data?.settings?.position) {
@@ -49,7 +53,7 @@ const OverlayApp = () => {
     }
   }, [data?.settings?.position, data?.settings?.size, isDragging, isResizing]);
 
-  
+
   const handleDragStart = (e: React.MouseEvent) => {
     if (data?.settings?.isLocked) return;
     setIsDragging(true);
@@ -115,6 +119,10 @@ const OverlayApp = () => {
   if (!data || !data.song) return null;
 
   const { song, lyrics, settings } = data;
+
+  if (currentDomain && settings?.disabledDomains?.includes(currentDomain)) {
+    return null; 
+  }
   const currentTrackId = `${song.title}-${song.artist}`;
 
   if (prevTrackRef.current !== currentTrackId) {
@@ -149,11 +157,15 @@ const OverlayApp = () => {
     nextLine = "";
   }
 
-  const containerClasses = [
-    'lyricflow-container',
-    settings?.isTransparent ? 'is-transparent' : '',
-    settings?.isLocked ? 'is-locked' : ''
-  ].filter(Boolean).join(' ');
+  let containerClasses = 'lyricflow-container';
+
+  if (settings?.isTransparent) {
+    containerClasses += ' is-transparent';
+  }
+
+  if (settings?.isLocked) {
+    containerClasses += ' is-locked';
+  }
 
   const handleToggleTransparent = () => {
     if (portRef.current) portRef.current.postMessage({ type: 'TOGGLE_TRANSPARENT' });
@@ -164,25 +176,26 @@ const OverlayApp = () => {
   };
 
   return (
-    <div 
+    <div
       className={containerClasses}
       style={{
         left: `${localPos.x}px`,
         top: `${localPos.y}px`,
         width: `${localSize.width}px`,
         height: `${localSize.height}px`,
+        pointerEvents: settings?.isLocked ? 'none' : 'auto',
         // Disable transitions during drag/resize so the box perfectly hugs the mouse cursor
         transition: (isDragging || isResizing) ? 'none' : 'background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease'
       }}
     >
-      <div 
+      <div
         className={`lyricflow-header ${!settings?.isLocked ? 'is-draggable' : ''}`}
         onMouseDown={handleDragStart}
       >
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           🎵 {song.title} — {song.artist}
         </span>
-        
+
         <div className="header-controls">
           <button className="control-btn" onClick={handleToggleTransparent} onMouseDown={e => e.stopPropagation()} title="Toggle Transparency">
             {settings?.isTransparent ? '👁️' : '🕶️'}
@@ -192,14 +205,32 @@ const OverlayApp = () => {
           </button>
         </div>
       </div>
-      
+
       <div className="lyric-body">
-        <div className="lyricflow-current fade-in-line" key={`current-${currentLine}`}>
+        <div 
+          className="lyricflow-current fade-in-line" 
+          key={`current-${currentLine}`}
+          style={{
+            fontSize: `${settings?.fontSize}px`, 
+            color: settings?.lyricColor,
+            fontWeight: 'bold',
+            textShadow: '0px 2px 4px rgba(0, 0, 0, 0.9), 0px 0px 2px rgba(0, 0, 0, 1)'
+          }}
+        >
           ▶ {currentLine}
         </div>
         
         {nextLine && (
-          <div className="lyricflow-next" key={`next-${nextLine}`}>
+          <div 
+            className="lyricflow-next" 
+            key={`next-${nextLine}`}
+            style={{
+              fontSize: `${settings?.fontSize * 0.82}px`, 
+              color: '#aaaaaa',
+              marginTop: '4px',
+              textShadow: '0px 1px 3px rgba(0, 0, 0, 0.8)'
+            }}
+          >
             {nextLine}
           </div>
         )}

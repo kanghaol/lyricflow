@@ -9,6 +9,9 @@
     "service_worker": "src/background/index.ts",
     "type": "module"
   },
+  "action": {
+    "default_popup": "src/popup/popup.html"
+  },
   "content_scripts": [
     {
       "matches": ["*://open.spotify.com/*"],
@@ -18,5 +21,6 @@
       "matches": ["<all_urls>"],
       "js": ["src/content/overlay.tsx"]
     }
+
   ]
 }

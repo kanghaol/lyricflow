@@ -5,12 +5,18 @@ const overlayPorts: Set<chrome.runtime.Port> = new Set();
 const lyricsCache = new Map<string, LyricLine[]>();
 
 // Global UI State
-let globalSettings: UISettings = {
+let DEFAULT_SETTINGS: UISettings = {
   isTransparent: false,
   isLocked: false,
   position: { x: 20, y: 20 },
-  size: { width: 380, height: 120 }
+  size: { width: 380, height: 120 },
+  fontSize: 17,
+  lyricColor: '#1DB954',
+  disabledDomains: []
 };
+
+let globalSettings: UISettings = { ...DEFAULT_SETTINGS };
+
 
 chrome.storage.local.get(['lyricflow_settings'], (result) => {
   if (result.lyricflow_settings) {
@@ -27,6 +33,12 @@ function saveAndBroadcastSettings() {
 // Store the last known song state to broadcast immediately when a new tab opens
 let lastKnownSong: SongInfo | null = null;
 let lastKnownLyrics: LyricLine[] | null = null;
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'GET_TAB_ID' && sender.tab?.id) {
+    sendResponse({ tabId: sender.tab.id });
+  }
+});
 
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name === 'spotify') {
@@ -68,6 +80,24 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
            globalSettings.size = msg.payload;
            saveAndBroadcastSettings();
         }
+      } else if (msg.type === 'UPDATE_STYLE' && msg.payload) {
+        globalSettings.fontSize = msg.payload.fontSize;
+        globalSettings.lyricColor = msg.payload.lyricColor;
+        saveAndBroadcastSettings();
+      } else if (msg.type === 'RESET_STYLES') {
+        // Reset visual styles to default values
+        globalSettings.fontSize = DEFAULT_SETTINGS.fontSize;
+        globalSettings.lyricColor = DEFAULT_SETTINGS.lyricColor;
+        saveAndBroadcastSettings();
+      } else if (msg.type === 'TOGGLE_DOMAIN_DISABLED' && msg.payload?.domain) {
+        const domain = msg.payload.domain;
+        const index = globalSettings.disabledDomains.indexOf(domain);
+        if (index > -1) {
+          globalSettings.disabledDomains.splice(index, 1); // Enable domain
+        } else {
+          globalSettings.disabledDomains.push(domain);     // Disable domain
+        }
+        saveAndBroadcastSettings();
       }
     });
 
@@ -125,7 +155,7 @@ async function handleSpotifyUpdate(songInfo: SongInfo) {
 }
 
 function broadcastSync() {
-  if (!lastKnownSong) return;
+  // if (!lastKnownSong) return;
   
   const payload = { 
     song: lastKnownSong, 

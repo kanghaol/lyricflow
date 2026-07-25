@@ -15,6 +15,9 @@ export interface UISettings {
   isLocked: boolean;
   position: { x: number; y: number };
   size: { width: number; height: number };
+  fontSize: number;
+  lyricColor: string;
+  disabledDomains: string[];
 }
 
 export interface SyncPayload {
