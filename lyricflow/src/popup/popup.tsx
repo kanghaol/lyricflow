@@ -159,7 +159,7 @@ export default function Popup() {
       >
         Return to Default Styles
       </button>
-
+      <span style={{ fontSize: '14px', color: '#d8d8d8', marginTop: '4px' }}>Lyrics powered by LRCLIB.</span>
     </div>
   );
 }

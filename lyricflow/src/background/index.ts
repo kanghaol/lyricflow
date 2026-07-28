@@ -4,6 +4,8 @@ import { LyricCache } from '../utils/cache';
 
 let spotifyPort: chrome.runtime.Port | null = null;
 const overlayPorts: Set<chrome.runtime.Port> = new Set();
+const memoryCache = new Map<string, string>();
+const MAX_MEMORY_CACHE_SIZE = 25;
 
 // Global UI State
 let DEFAULT_SETTINGS: UISettings = {
@@ -48,7 +50,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     port.onDisconnect.addListener(() => { spotifyPort = null; });
   } else if (port.name === 'overlay') {
     overlayPorts.add(port);
-    
+
     // Immediately send the current state to the newly opened tab
     if (lastKnownSong) {
       port.postMessage({
@@ -68,14 +70,14 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
       } else if (msg.type === 'UPDATE_POSITION') {
         // Only update if valid coordinates are provided
         if (msg.payload && typeof msg.payload.x === 'number') {
-           globalSettings.position = msg.payload;
-           saveAndBroadcastSettings();
+          globalSettings.position = msg.payload;
+          saveAndBroadcastSettings();
         }
       } else if (msg.type === 'UPDATE_SIZE') {
         // Only update if valid dimensions are provided
         if (msg.payload && typeof msg.payload.width === 'number' && typeof msg.payload.height === 'number') {
-           globalSettings.size = msg.payload;
-           saveAndBroadcastSettings();
+          globalSettings.size = msg.payload;
+          saveAndBroadcastSettings();
         }
       } else if (msg.type === 'UPDATE_STYLE' && msg.payload) {
         globalSettings.fontSize = msg.payload.fontSize;
@@ -101,20 +103,42 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     port.onDisconnect.addListener(() => { overlayPorts.delete(port); });
   }
 });
+// helper function for in memory caching with eviction policy
+function getMemoryCache(key: string): string | null {
+  const value = memoryCache.get(key);
+  return value ?? null;
+}
+
+function setMemoryCache(key: string, lyrics: string) {
+  // If key already exists, delete it first so it becomes the newest entry
+  if (memoryCache.has(key)) {
+    memoryCache.delete(key);
+  }
+
+  memoryCache.set(key, lyrics);
+
+  // Evict the oldest entry if over capacity
+  if (memoryCache.size > MAX_MEMORY_CACHE_SIZE) {
+    const oldestKey = memoryCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      memoryCache.delete(oldestKey);
+    }
+  }
+}
 
 async function handleSpotifyUpdate(songInfo: SongInfo) {
-  const isNewTrack = 
-    lastKnownSong?.title !== songInfo.title || 
+  const isNewTrack =
+    lastKnownSong?.title !== songInfo.title ||
     lastKnownSong?.artist !== songInfo.artist;
 
   lastKnownSong = songInfo;
-  
+
   // 2. If it's the exact same song, just broadcast the new time to the UI and STOP.
   if (!isNewTrack) {
     broadcastSync();
     return;
   }
-  
+
   // 1. Generate key from cache.ts module (Duration removed)
   const cacheKey = LyricCache.getKey(songInfo.artist, songInfo.title);
 
@@ -122,12 +146,34 @@ async function handleSpotifyUpdate(songInfo: SongInfo) {
   if (debounceTimer) clearTimeout(debounceTimer);
 
   try {
-    // 2. Check persistent Chrome Storage via cache.ts
+
+    // 1. Check in-memory cache first
+    const memoryLyrics = getMemoryCache(cacheKey);
+
+    if (memoryLyrics !== null) {
+      // console.log("Serving from memory:", cacheKey);
+
+      lastKnownLyrics = memoryLyrics
+        ? parseSyncedLyrics(memoryLyrics)
+        : [];
+
+      broadcastSync();
+      return;
+    }
+
+    // 2. Fall back to persistent Chrome storage
     const cachedLyricsStr = await LyricCache.get(cacheKey);
-    
+
     if (cachedLyricsStr !== null) {
-      // console.log("Serving from cache:", cacheKey);
-      lastKnownLyrics = cachedLyricsStr ? parseSyncedLyrics(cachedLyricsStr) : [];
+      // console.log("Serving from storage:", cacheKey); 
+
+      // add into RAM cache
+      setMemoryCache(cacheKey, cachedLyricsStr);
+
+      lastKnownLyrics = cachedLyricsStr
+        ? parseSyncedLyrics(cachedLyricsStr)
+        : [];
+
       broadcastSync();
       return;
     }
@@ -143,20 +189,23 @@ async function handleSpotifyUpdate(songInfo: SongInfo) {
       if (activeTrackKey !== cacheKey) return;
 
       try {
-     
+
         const lyricsStr = await fetchLyrics(songInfo.artist, songInfo.title);
-        
+
         // Save to storage cache
         await LyricCache.set(cacheKey, lyricsStr);
-        
+        // save to in-memory cache
+        setMemoryCache(cacheKey, lyricsStr);
+
         lastKnownLyrics = lyricsStr ? parseSyncedLyrics(lyricsStr) : [];
         broadcastSync();
-        
+
       } catch (error: any) {
         if (error.message === "RATE_LIMITED") {
           lastKnownLyrics = [{ timeMs: 0, text: "Rate limited. Please wait a moment." }];
         } else if (error.message === "NOT_FOUND") {
           await LyricCache.set(cacheKey, ""); // Cache the empty result
+          setMemoryCache(cacheKey, "");
           lastKnownLyrics = [];
         } else {
           lastKnownLyrics = [{ timeMs: 0, text: "Network error fetching lyrics." }];
@@ -173,9 +222,9 @@ async function handleSpotifyUpdate(songInfo: SongInfo) {
 
 function broadcastSync() {
   // if (!lastKnownSong) return;
-  
-  const payload = { 
-    song: lastKnownSong, 
+
+  const payload = {
+    song: lastKnownSong,
     lyrics: lastKnownLyrics,
     settings: globalSettings
   };
@@ -197,7 +246,7 @@ function parseSyncedLyrics(syncedLyrics: string): LyricLine[] {
       const seconds = parseFloat(match[2]);
       const timeMs = Math.floor((minutes * 60 + seconds) * 1000);
       const text = line.replace(timeRegex, '').trim();
-      
+
       if (text) parsed.push({ timeMs, text });
     }
   }

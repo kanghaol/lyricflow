@@ -153,7 +153,7 @@ const OverlayApp = () => {
       }
     }
   } else if (isFetching) {
-    currentLine = "Fetching lyrics...";
+    currentLine = "Searching for lyrics...";
     nextLine = "";
   }
 
