@@ -225,7 +225,7 @@ const OverlayApp = () => {
             className="lyricflow-next" 
             key={`next-${nextLine}`}
             style={{
-              fontSize: `${settings?.fontSize * 0.82}px`, 
+              fontSize: `${(settings?.fontSize || 17) * 0.82}px`, 
               color: '#aaaaaa',
               marginTop: '4px',
               textShadow: '0px 1px 3px rgba(0, 0, 0, 0.8)'

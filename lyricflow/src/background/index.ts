@@ -1,8 +1,9 @@
+import { fetchLyrics } from '../api/lrclib';
 import type { SongInfo, LyricLine, UISettings } from '../types';
+import { LyricCache } from '../utils/cache';
 
 let spotifyPort: chrome.runtime.Port | null = null;
 const overlayPorts: Set<chrome.runtime.Port> = new Set();
-const lyricsCache = new Map<string, LyricLine[]>();
 
 // Global UI State
 let DEFAULT_SETTINGS: UISettings = {
@@ -34,11 +35,7 @@ function saveAndBroadcastSettings() {
 let lastKnownSong: SongInfo | null = null;
 let lastKnownLyrics: LyricLine[] | null = null;
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'GET_TAB_ID' && sender.tab?.id) {
-    sendResponse({ tabId: sender.tab.id });
-  }
-});
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name === 'spotify') {
@@ -106,53 +103,73 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
 });
 
 async function handleSpotifyUpdate(songInfo: SongInfo) {
+  const isNewTrack = 
+    lastKnownSong?.title !== songInfo.title || 
+    lastKnownSong?.artist !== songInfo.artist;
+
   lastKnownSong = songInfo;
-  const cacheKey = `${songInfo.artist}-${songInfo.title}`.toLowerCase();
   
-  let lyrics: LyricLine[] | null = lyricsCache.get(cacheKey) || null;
-
-  if (!lyrics && !lyricsCache.has(cacheKey)) {
-    try {
-      const url = new URL('https://lrclib.net/api/get');
-      url.searchParams.append('track_name', songInfo.title);
-      url.searchParams.append('artist_name', songInfo.artist);
-
-      const res = await fetch(url.toString());
-      
-      if (res.ok) {
-        const data = await res.json();
-        if (data.syncedLyrics) {
-          lyrics = parseSyncedLyrics(data.syncedLyrics);
-          lyricsCache.set(cacheKey, lyrics);
-        } else {
-          // Song exists in database, but has no synced lyrics
-          lyricsCache.set(cacheKey, []); 
-        }
-      } else {
-        // API returned 404 (Not Found) or 429 (Rate Limit). 
-        // Cache as empty so we don't spam the API on the next 100ms tick.
-        lyricsCache.set(cacheKey, []);
-      }
-    } catch (err) {
-      // Cache as empty on network failure to prevent infinite retries
-      lyricsCache.set(cacheKey, []);
-    }
-  }
-
-  // --- RACE CONDITION FIX ---
-  //race with the old song's fetch 
-  // check if the global 'lastKnownSong' still matches the one we started this function with.
-  const activeTrackKey = `${lastKnownSong?.artist}-${lastKnownSong?.title}`.toLowerCase();
-  if (activeTrackKey !== cacheKey) {
-    // This fetch belongs to an old song! 
-    // Silently abort 
+  // 2. If it's the exact same song, just broadcast the new time to the UI and STOP.
+  if (!isNewTrack) {
+    broadcastSync();
     return;
   }
+  
+  // 1. Generate key from cache.ts module (Duration removed)
+  const cacheKey = LyricCache.getKey(songInfo.artist, songInfo.title);
 
-  // If we made it here, this is still the active song. Update and broadcast!
-  lastKnownLyrics = lyricsCache.get(cacheKey) || [];
-  broadcastSync();
+  // Clear previous timer if the user skips rapidly
+  if (debounceTimer) clearTimeout(debounceTimer);
+
+  try {
+    // 2. Check persistent Chrome Storage via cache.ts
+    const cachedLyricsStr = await LyricCache.get(cacheKey);
+    
+    if (cachedLyricsStr !== null) {
+      // console.log("Serving from cache:", cacheKey);
+      lastKnownLyrics = cachedLyricsStr ? parseSyncedLyrics(cachedLyricsStr) : [];
+      broadcastSync();
+      return;
+    }
+
+    // Temporarily clear lyrics to show a loading state on the UI
+    lastKnownLyrics = null;
+    broadcastSync();
+
+    // 3. Debounce network requests by 1.5 seconds
+    debounceTimer = setTimeout(async () => {
+      // Make sure the track didn't change while we were waiting (Duration removed)
+      const activeTrackKey = LyricCache.getKey(lastKnownSong?.artist || '', lastKnownSong?.title || '');
+      if (activeTrackKey !== cacheKey) return;
+
+      try {
+     
+        const lyricsStr = await fetchLyrics(songInfo.artist, songInfo.title);
+        
+        // Save to storage cache
+        await LyricCache.set(cacheKey, lyricsStr);
+        
+        lastKnownLyrics = lyricsStr ? parseSyncedLyrics(lyricsStr) : [];
+        broadcastSync();
+        
+      } catch (error: any) {
+        if (error.message === "RATE_LIMITED") {
+          lastKnownLyrics = [{ timeMs: 0, text: "Rate limited. Please wait a moment." }];
+        } else if (error.message === "NOT_FOUND") {
+          await LyricCache.set(cacheKey, ""); // Cache the empty result
+          lastKnownLyrics = [];
+        } else {
+          lastKnownLyrics = [{ timeMs: 0, text: "Network error fetching lyrics." }];
+        }
+        broadcastSync();
+      }
+    }, 1500);
+
+  } catch (err) {
+    console.error("Pipeline error:", err);
+  }
 }
+
 
 function broadcastSync() {
   // if (!lastKnownSong) return;
