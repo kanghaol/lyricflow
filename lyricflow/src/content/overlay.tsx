@@ -14,7 +14,10 @@ const OverlayApp = () => {
   // Local UI State for Dragging & Resizing
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const [localPos, setLocalPos] = useState({ x: 20, y: 20 });
+  const [localPos, setLocalPos] = useState({ 
+  x: Math.max(0, window.innerWidth / 2 - 190), 
+  y: Math.max(0, window.innerHeight - 150)     
+  });
   const [localSize, setLocalSize] = useState({ width: 380, height: 120 });
 
   const dragStartOffset = useRef({ x: 0, y: 0 });
@@ -46,12 +49,21 @@ const OverlayApp = () => {
   // Sync local states with global worker settings ONLY when not interacting
   useEffect(() => {
     if (!isDragging && data?.settings?.position) {
-      setLocalPos(data.settings.position);
+      // If the background worker sends its hardcoded default (20, 20), calculate the bottom-middle instead!
+      if (data.settings.position.x === 20 && data.settings.position.y === 20) {
+        setLocalPos({
+          x: Math.max(0, window.innerWidth / 2 - (localSize.width / 2)),
+          y: Math.max(0, window.innerHeight - localSize.height - 30)
+        });
+      } else {
+        // Otherwise, use the user's specifically saved custom position
+        setLocalPos(data.settings.position);
+      }
     }
     if (!isResizing && data?.settings?.size) {
       setLocalSize(data.settings.size);
     }
-  }, [data?.settings?.position, data?.settings?.size, isDragging, isResizing]);
+  }, [data?.settings?.position, data?.settings?.size, isDragging, isResizing, localSize.width, localSize.height]);
 
 
   const handleDragStart = (e: React.MouseEvent) => {
