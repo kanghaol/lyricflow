@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Cross-tab synchronized Spotify lyrics overlay.",
   "permissions": ["storage", "tabs", "scripting", "activeTab"],
-  "host_permissions": ["*://open.spotify.com/*"],
+  "host_permissions": [
+    "https://open.spotify.com/*",
+    "*://*/*"
+  ],
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"
@@ -14,13 +17,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://open.spotify.com/*"],
+      "matches": ["https://open.spotify.com/*"],
       "js": ["src/content/spotify.ts"]
     },
     {
-      "matches": ["<all_urls>"],
+      "matches": ["*://*/*"],
       "js": ["src/content/overlay.tsx"]
     }
-
   ]
 }
