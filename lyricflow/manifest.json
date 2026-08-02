@@ -3,7 +3,7 @@
   "name": "LyricFlow",
   "version": "1.0.0",
   "description": "Cross-tab synchronized Spotify lyrics overlay.",
-  "permissions": ["storage", "tabs", "scripting", "activeTab"],
+  "permissions": ["storage", "tabs", "activeTab"],
   "host_permissions": [
     "https://open.spotify.com/*",
     "*://*/*"
