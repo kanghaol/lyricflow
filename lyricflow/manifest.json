@@ -1,7 +1,12 @@
 {
   "manifest_version": 3,
   "name": "LyricFlow",
-  "version": "1.0.0",
+  "version": "1.0.2",
+  "icons": {
+    "16": "public/icon-16.png",
+    "48": "public/icon-48.png",
+    "128": "public/icon-128.png"
+  },
   "description": "Cross-tab synchronized Spotify lyrics overlay.",
   "permissions": ["storage", "tabs", "activeTab"],
   "host_permissions": [
@@ -13,7 +18,12 @@
     "type": "module"
   },
   "action": {
-    "default_popup": "src/popup/popup.html"
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "public/icon-16.png",
+      "48": "public/icon-48.png",
+      "128": "public/icon-128.png"
+    }
   },
   "content_scripts": [
     {
