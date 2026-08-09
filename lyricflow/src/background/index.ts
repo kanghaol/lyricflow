@@ -47,7 +47,14 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         handleSpotifyUpdate(msg.payload);
       }
     });
-    port.onDisconnect.addListener(() => { spotifyPort = null; });
+
+    port.onDisconnect.addListener(() => {
+      spotifyPort = null;
+      lastKnownSong = null;
+      lastKnownLyrics = null;
+      broadcastSync(); 
+    });
+    
   } else if (port.name === 'overlay') {
     overlayPorts.add(port);
 
