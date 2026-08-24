@@ -5,7 +5,7 @@
 
 ## 🌟 Key Features
 
-* **⏱️ Synchronized Time-Synced Lyrics:** Automatically syncs track progress with the **LRCLIB API** to display live, scrolling `.lrc` lyrics.
+* **⏱️ Synchronized Time-Synced Lyrics:** Automatically syncs track progress with the **LRCLIB API** to display live, scrolling lyrics.
 * **📌 Cross-Tab Floating Overlay:** View synchronized lyrics anywhere on the web without keeping the Spotify Web Player tab in focus.
 * **🛡️ Shadow DOM Isolation:** Encapsulates styles within a Web Component boundary, preventing third-party website CSS from clashing with the extension UI.
 * **⚡ Caching Pipeline:** Leverages an **In-Memory Cache**, **`chrome.storage.local`**, and fallback REST requests to minimize API network usage and deliver instantaneous rendering.
