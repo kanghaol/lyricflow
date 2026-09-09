@@ -14,9 +14,9 @@ const OverlayApp = () => {
   // Local UI State for Dragging & Resizing
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const [localPos, setLocalPos] = useState({ 
-  x: Math.max(0, window.innerWidth / 2 - 190), 
-  y: Math.max(0, window.innerHeight - 150)     
+  const [localPos, setLocalPos] = useState({
+    x: Math.max(0, window.innerWidth / 2 - 190),
+    y: Math.max(0, window.innerHeight - 150)
   });
   const [localSize, setLocalSize] = useState({ width: 380, height: 120 });
 
@@ -133,7 +133,7 @@ const OverlayApp = () => {
   const { song, lyrics, settings } = data;
 
   if (currentDomain && settings?.disabledDomains?.includes(currentDomain)) {
-    return null; 
+    return null;
   }
   const currentTrackId = `${song.title}-${song.artist}`;
 
@@ -215,15 +215,31 @@ const OverlayApp = () => {
           <button className="control-btn lock-btn" onClick={handleToggleLock} onMouseDown={e => e.stopPropagation()} title="Lock & Click-Through">
             {settings?.isLocked ? '🔒' : '🔓'}
           </button>
+          <button
+            onClick={() => {
+              chrome.storage.local.set({ extensionEnabled: false });
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#ff4d4d', 
+              cursor: 'pointer',
+              fontSize: '16px',
+              marginLeft: 'auto'
+            }}
+            title="Turn off LyricFlow"
+          >
+            ⏻
+          </button>
         </div>
       </div>
 
       <div className="lyric-body">
-        <div 
-          className="lyricflow-current fade-in-line" 
+        <div
+          className="lyricflow-current fade-in-line"
           key={`current-${currentLine}`}
           style={{
-            fontSize: `${settings?.fontSize}px`, 
+            fontSize: `${settings?.fontSize}px`,
             color: settings?.lyricColor,
             fontWeight: 'bold',
             textShadow: '0px 2px 4px rgba(0, 0, 0, 0.9), 0px 0px 2px rgba(0, 0, 0, 1)'
@@ -231,13 +247,13 @@ const OverlayApp = () => {
         >
           ▶ {currentLine}
         </div>
-        
+
         {nextLine && (
-          <div 
-            className="lyricflow-next" 
+          <div
+            className="lyricflow-next"
             key={`next-${nextLine}`}
             style={{
-              fontSize: `${(settings?.fontSize || 17) * 0.82}px`, 
+              fontSize: `${(settings?.fontSize || 17) * 0.82}px`,
               color: '#aaaaaa',
               marginTop: '4px',
               textShadow: '0px 1px 3px rgba(0, 0, 0, 0.8)'

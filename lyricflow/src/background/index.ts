@@ -27,6 +27,18 @@ chrome.storage.local.get(['lyricflow_settings'], (result) => {
   }
 });
 
+// Listen for storage changes to instantly kill or resume syncing
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.extensionEnabled) {
+    const isEnabled = changes.extensionEnabled.newValue;
+    if (!isEnabled) {
+      lastKnownSong = null;
+      lastKnownLyrics = null;
+      broadcastSync(); // Wipes the overlay across all active tabs immediately
+    }
+  }
+});
+
 //helper function to save settings to storage and broadcast to all overlay ports
 function saveAndBroadcastSettings() {
   chrome.storage.local.set({ lyricflow_settings: globalSettings });
@@ -228,19 +240,24 @@ async function handleSpotifyUpdate(songInfo: SongInfo) {
 
 
 function broadcastSync() {
-  // if (!lastKnownSong) return;
+  chrome.storage.local.get(['extensionEnabled'], (result) => {
+    const isEnabled = result.extensionEnabled !== false;
 
-  const payload = {
-    song: lastKnownSong,
-    lyrics: lastKnownLyrics,
-    settings: globalSettings
-  };
+    const payload = isEnabled ? {
+      song: lastKnownSong,
+      lyrics: lastKnownLyrics,
+      settings: globalSettings
+    } : {
+      song: null,
+      lyrics: null,
+      settings: globalSettings
+    };
 
-  for (const port of overlayPorts) {
-    port.postMessage({ type: 'SYNC_UPDATE', payload });
-  }
+    for (const port of overlayPorts) {
+      port.postMessage({ type: 'SYNC_UPDATE', payload });
+    }
+  });
 }
-
 function parseSyncedLyrics(syncedLyrics: string): LyricLine[] {
   const lines = syncedLyrics.split('\n');
   const parsed: LyricLine[] = [];

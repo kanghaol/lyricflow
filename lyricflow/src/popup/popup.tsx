@@ -16,6 +16,13 @@ export default function Popup() {
   const [data, setData] = useState<SyncPayload | null>(null);
   const [currentDomain, setCurrentDomain] = useState<string | null>(null);
   const portRef = useRef<chrome.runtime.Port | null>(null);
+  const [isEnabled, setIsEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    chrome.storage.local.get(['extensionEnabled'], (result) => {
+      setIsEnabled(result.extensionEnabled !== false);
+    });
+  }, []);
 
   useEffect(() => {
     // Get active tab URL and extract domain
@@ -42,6 +49,13 @@ export default function Popup() {
     return () => port.disconnect();
   }, []);
 
+  // Global Master Toggle handler
+  const handleGlobalToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newState = e.target.checked;
+    setIsEnabled(newState);
+    chrome.storage.local.set({ extensionEnabled: newState });
+  };
+  
   const handleStyleChange = (fontSize: number, lyricColor: string) => {
     portRef.current?.postMessage({
       type: 'UPDATE_STYLE',
@@ -95,8 +109,32 @@ export default function Popup() {
         </button>
       </div>
 
+      {/* Global Master On/Off Switch */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#252525', padding: '10px 12px', borderRadius: '6px', border: '1px solid #333' }}>
+        <span style={{ fontSize: '13px', fontWeight: 'bold' }}> Extension toggle</span>
+        <label style={{ position: 'relative', display: 'inline-block', width: '36px', height: '20px', cursor: 'pointer' }}>
+          <input 
+            type="checkbox" 
+            checked={isEnabled} 
+            onChange={handleGlobalToggle}
+            style={{ opacity: 0, width: 0, height: 0 }}
+          />
+          <span style={{
+            position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: isEnabled ? '#2e7d32' : '#555',
+            transition: '.2s', borderRadius: '20px'
+          }}>
+            <span style={{
+              position: 'absolute', content: '""', height: '14px', width: '14px', left: '3px', bottom: '3px',
+              backgroundColor: 'white', transition: '.2s', borderRadius: '50%',
+              transform: isEnabled ? 'translateX(16px)' : 'translateX(0)'
+            }} />
+          </span>
+        </label>
+      </div>
+
       {/* Font Size Selector */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', opacity: isEnabled ? 1 : 0.4, pointerEvents: isEnabled ? 'auto' : 'none' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#aaa' }}>
           <span>Font Size</span>
           <span style={{ color: '#fff', fontWeight: 'bold' }}>{fontSize}px</span>
@@ -112,7 +150,7 @@ export default function Popup() {
       </div>
 
       {/* Curated High-Contrast Color Palette */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', opacity: isEnabled ? 1 : 0.4, pointerEvents: isEnabled ? 'auto' : 'none' }}>
         <span style={{ fontSize: '13px', color: '#aaa' }}>High-Visibility Lyric Colors</span>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
           {VISIBLE_COLOR_OPTIONS.map((c) => {
@@ -142,6 +180,7 @@ export default function Popup() {
       {/* Return to Default Button */}
       <button 
         onClick={handleReset}
+        disabled={!isEnabled}
         style={{
           marginTop: '4px',
           padding: '8px',
@@ -149,13 +188,14 @@ export default function Popup() {
           color: '#ddd',
           border: '1px solid #444',
           borderRadius: '6px',
-          cursor: 'pointer',
+          cursor: isEnabled ? 'pointer' : 'not-allowed',
           fontSize: '12px',
           fontWeight: 'bold',
+          opacity: isEnabled ? 1 : 0.4,
           transition: 'background 0.2s'
         }}
-        onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#444'}
-        onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#333'}
+        onMouseOver={(e) => { if (isEnabled) e.currentTarget.style.backgroundColor = '#444'; }}
+        onMouseOut={(e) => { if (isEnabled) e.currentTarget.style.backgroundColor = '#333'; }}
       >
         Return to Default Styles
       </button>
