@@ -27,15 +27,10 @@ chrome.storage.local.get(['lyricflow_settings'], (result) => {
   }
 });
 
-// Listen for storage changes to instantly kill or resume syncing
+// Listen for storage changes to disable or resume syncing
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.extensionEnabled) {
-    const isEnabled = changes.extensionEnabled.newValue;
-    if (!isEnabled) {
-      lastKnownSong = null;
-      lastKnownLyrics = null;
-      broadcastSync(); // Wipes the overlay across all active tabs immediately
-    }
+    broadcastSync()
   }
 });
 
