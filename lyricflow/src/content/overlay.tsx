@@ -208,13 +208,123 @@ const OverlayApp = () => {
           🎵 {song.title} — {song.artist}
         </span>
 
-        <div className="header-controls">
-          <button className="control-btn" onClick={handleToggleTransparent} onMouseDown={e => e.stopPropagation()} title="Toggle Transparency">
-            {settings?.isTransparent ? '👁️' : '🕶️'}
+        <div
+          className="header-controls"
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: '16px',
+            marginLeft: 'auto'
+          }}
+        >
+
+          {/* Previous Button */}
+          <button
+            onClick={() => chrome.runtime.sendMessage({ type: 'PREV_SONG' }).catch(() => { })}
+            style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', opacity: 0.7, transition: 'all 0.2s', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+            title="Previous"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+            </svg>
           </button>
-          <button className="control-btn lock-btn" onClick={handleToggleLock} onMouseDown={e => e.stopPropagation()} title="Lock & Click-Through">
-            {settings?.isLocked ? '🔒' : '🔓'}
+
+          {/* Play / Pause Button */}
+          <button
+            onClick={() => chrome.runtime.sendMessage({ type: 'TOGGLE_PLAYBACK' }).catch(() => { })}
+            style={{
+              background: 'rgba(255, 255, 255, 0.15)',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'; e.currentTarget.style.transform = 'scale(1)'; }}
+            title={song?.isPlaying ? "Pause" : "Play"}
+          >
+            {song?.isPlaying ? (
+              /* Pause Icon */
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+            ) : (
+              /* Play Icon */
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: '2px' }}>
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
           </button>
+
+          {/* Next Button */}
+          <button
+            onClick={() => chrome.runtime.sendMessage({ type: 'NEXT_SONG' }).catch(() => { })}
+            style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', opacity: 0.7, transition: 'all 0.2s', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+            title="Next"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+            </svg>
+          </button>
+
+          {/* Transparency Toggle */}
+          <button
+            className="control-btn"
+            onClick={handleToggleTransparent}
+            onMouseDown={e => e.stopPropagation()}
+            style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', opacity: 0.7, transition: 'all 0.2s', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+            title={settings?.isTransparent ? "Solid Background" : "Transparent Background"}
+          >
+            {settings?.isTransparent ? (
+              /* Visibility Off / Transparent Icon */
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
+              </svg>
+            ) : (
+              /* Visibility On / Solid Icon */
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+              </svg>
+            )}
+          </button>
+
+          {/* Lock Toggle */}
+          <button
+            className="control-btn lock-btn"
+            onClick={handleToggleLock}
+            onMouseDown={e => e.stopPropagation()}
+            style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', opacity: 0.7, transition: 'all 0.2s', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+            title={settings?.isLocked ? "Unlock UI" : "Lock & Click-Through"}
+          >
+            {settings?.isLocked ? (
+              /* Locked Icon */
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+              </svg>
+            ) : (
+              /* Unlocked Icon */
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" />
+              </svg>
+            )}
+          </button>
+
+          {/* Power / Turn Off Button */}
           <button
             onClick={() => {
               chrome.storage.local.set({ extensionEnabled: false });
@@ -222,15 +332,24 @@ const OverlayApp = () => {
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#ff4d4d', 
+              color: '#ff4d4d',
               cursor: 'pointer',
-              fontSize: '16px',
-              marginLeft: 'auto'
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: 0.8,
+              transition: 'opacity 0.2s'
             }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
             title="Turn off LyricFlow"
           >
-            ⏻
+            {/* Power / Close SVG Icon */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.41L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />
+            </svg>
           </button>
+
         </div>
       </div>
 

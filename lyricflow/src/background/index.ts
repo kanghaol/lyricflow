@@ -46,6 +46,19 @@ let lastKnownLyrics: LyricLine[] | null = null;
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Listen for global media commands sent from the overlay buttons
+chrome.runtime.onMessage.addListener((message) => {
+  if (['TOGGLE_PLAYBACK', 'NEXT_SONG', 'PREV_SONG'].includes(message.type)) {
+    if (spotifyPort) {
+      try {
+        spotifyPort.postMessage({ type: message.type });
+      } catch (err) {
+        spotifyPort = null;
+      }
+    }
+  }
+});
+
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name === 'spotify') {
     spotifyPort = port;
@@ -59,9 +72,9 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
       spotifyPort = null;
       lastKnownSong = null;
       lastKnownLyrics = null;
-      broadcastSync(); 
+      broadcastSync();
     });
-    
+
   } else if (port.name === 'overlay') {
     overlayPorts.add(port);
 

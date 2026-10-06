@@ -1,11 +1,33 @@
 //spotify.ts
 import type { SongInfo } from '../types';
 
-let port = chrome.runtime.connect({ name: 'spotify' });
+let port: chrome.runtime.Port;
 
-port.onDisconnect.addListener(() => {
+function setupPort() {
   port = chrome.runtime.connect({ name: 'spotify' });
-});
+
+  // Listen for media commands forwarded from the background worker
+  port.onMessage.addListener((msg: any) => {
+    if (msg.type === 'TOGGLE_PLAYBACK') {
+      const playPauseBtn = document.querySelector('[data-testid="control-button-playpause"]') as HTMLButtonElement;
+      playPauseBtn?.click();
+    } else if (msg.type === 'NEXT_SONG') {
+      const nextBtn = document.querySelector('[data-testid="control-button-skip-forward"]') as HTMLButtonElement;
+      nextBtn?.click();
+    } else if (msg.type === 'PREV_SONG') {
+      const prevBtn = document.querySelector('[data-testid="control-button-skip-back"]') as HTMLButtonElement;
+      prevBtn?.click();
+    }
+  });
+
+  // Re-establish port and re-bind listeners if disconnected
+  port.onDisconnect.addListener(() => {
+    setupPort();
+  });
+}
+
+// Initialize port connection
+setupPort();
 
 // Helper function to parse "01:24" into 84000 milliseconds
 function getPlaybackProgressMs(): number {
