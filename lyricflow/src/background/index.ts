@@ -1,3 +1,4 @@
+// src/background/index.ts
 import { fetchLyrics } from '../api/lrclib';
 import type { SongInfo, LyricLine, UISettings } from '../types';
 import { LyricCache } from '../utils/cache';
@@ -20,7 +21,6 @@ let DEFAULT_SETTINGS: UISettings = {
 
 let globalSettings: UISettings = { ...DEFAULT_SETTINGS };
 
-
 chrome.storage.local.get(['lyricflow_settings'], (result) => {
   if (result.lyricflow_settings) {
     globalSettings = { ...globalSettings, ...result.lyricflow_settings };
@@ -30,11 +30,11 @@ chrome.storage.local.get(['lyricflow_settings'], (result) => {
 // Listen for storage changes to disable or resume syncing
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.extensionEnabled) {
-    broadcastSync()
+    broadcastSync();
   }
 });
 
-//helper function to save settings to storage and broadcast to all overlay ports
+// Helper function to save settings to storage and broadcast to all overlay ports
 function saveAndBroadcastSettings() {
   chrome.storage.local.set({ lyricflow_settings: globalSettings });
   broadcastSync();
@@ -80,15 +80,43 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
 
     // Immediately send the current state to the newly opened tab
     if (lastKnownSong) {
-      port.postMessage({
-        type: 'SYNC_UPDATE',
-        payload: { song: lastKnownSong, lyrics: lastKnownLyrics, settings: globalSettings }
+      chrome.storage.local.get(['extensionEnabled'], (result) => {
+        const isEnabled = result.extensionEnabled !== false;
+        port.postMessage({
+          type: 'SYNC_UPDATE',
+          payload: isEnabled ? {
+            song: lastKnownSong,
+            lyrics: lastKnownLyrics,
+            settings: globalSettings
+          } : {
+            song: null,
+            lyrics: null,
+            settings: globalSettings
+          }
+        });
       });
     }
 
     // Listen for UI toggle requests from any tab
     port.onMessage.addListener((msg: any) => {
-      if (msg.type === 'TOGGLE_TRANSPARENT') {
+      if (msg.type === 'REQUEST_SYNC') {
+        // SLEEP MODE FIX: Send the current state immediately to the tab requesting a sync
+        chrome.storage.local.get(['extensionEnabled'], (result) => {
+          const isEnabled = result.extensionEnabled !== false;
+          port.postMessage({
+            type: 'SYNC_UPDATE',
+            payload: isEnabled ? {
+              song: lastKnownSong,
+              lyrics: lastKnownLyrics,
+              settings: globalSettings
+            } : {
+              song: null,
+              lyrics: null,
+              settings: globalSettings
+            }
+          });
+        });
+      } else if (msg.type === 'TOGGLE_TRANSPARENT') {
         globalSettings.isTransparent = !globalSettings.isTransparent;
         saveAndBroadcastSettings();
       } else if (msg.type === 'TOGGLE_LOCK') {
@@ -130,6 +158,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     port.onDisconnect.addListener(() => { overlayPorts.delete(port); });
   }
 });
+
 // helper function for in memory caching with eviction policy
 function getMemoryCache(key: string): string | null {
   const value = memoryCache.get(key);
@@ -246,7 +275,6 @@ async function handleSpotifyUpdate(songInfo: SongInfo) {
   }
 }
 
-
 function broadcastSync() {
   chrome.storage.local.get(['extensionEnabled'], (result) => {
     const isEnabled = result.extensionEnabled !== false;
@@ -266,6 +294,7 @@ function broadcastSync() {
     }
   });
 }
+
 function parseSyncedLyrics(syncedLyrics: string): LyricLine[] {
   const lines = syncedLyrics.split('\n');
   const parsed: LyricLine[] = [];

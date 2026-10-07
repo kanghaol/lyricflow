@@ -14,6 +14,10 @@ const OverlayApp = () => {
   // Local UI State for Dragging & Resizing
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  
+  // Track window dimensions dynamically to instantly handle zoom changes
+  const [windowSize, setWindowSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+
   const [localPos, setLocalPos] = useState({
     x: Math.max(0, window.innerWidth / 2 - 190),
     y: Math.max(0, window.innerHeight - 150)
@@ -23,48 +27,111 @@ const OverlayApp = () => {
   const dragStartOffset = useRef({ x: 0, y: 0 });
   const resizeStartRef = useRef({ startWidth: 0, startHeight: 0, startX: 0, startY: 0 });
 
+  // Helper: Prevents the overlay from getting lost off-screen
+  const clampPosition = (x: number, y: number, width: number, height: number) => {
+    return {
+      x: Math.max(0, Math.min(x, window.innerWidth - width)),
+      y: Math.max(0, Math.min(y, window.innerHeight - height))
+    };
+  };
 
+  // 1. SLEEP MODE & TAB SYNC FIX
   useEffect(() => {
     setCurrentDomain(window.location.hostname);
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
+
     const connectPort = () => {
-      const port = chrome.runtime.connect({ name: 'overlay' });
-      portRef.current = port;
+      if (portRef.current) {
+        portRef.current.disconnect();
+      }
 
-      port.onMessage.addListener((msg: any) => {
-        if (msg.type === 'SYNC_UPDATE') {
-          setData(msg.payload);
-        }
-      });
+      try {
+        const port = chrome.runtime.connect({ name: 'overlay' });
+        portRef.current = port;
 
-      port.onDisconnect.addListener(() => {
-        setTimeout(connectPort, 1000);
-      });
+        port.onMessage.addListener((msg: any) => {
+          if (msg.type === 'SYNC_UPDATE') {
+            setData(msg.payload);
+          }
+        });
+
+        port.onDisconnect.addListener(() => {
+          portRef.current = null;
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connectPort, 1000);
+        });
+
+        port.postMessage({ type: 'REQUEST_SYNC' });
+      } catch (error) {
+        console.log("LyricFlow: Extension context invalidated, waiting for refresh.");
+      }
     };
 
     connectPort();
-    return () => { if (portRef.current) portRef.current.disconnect(); };
+
+    const handleWakeAndFocus = () => {
+      if (!document.hidden) {
+        if (!portRef.current) {
+          connectPort();
+        } else {
+          try {
+            portRef.current.postMessage({ type: 'REQUEST_SYNC' });
+          } catch (e) {
+            connectPort();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('focus', handleWakeAndFocus);
+    document.addEventListener('visibilitychange', handleWakeAndFocus);
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      window.removeEventListener('focus', handleWakeAndFocus);
+      document.removeEventListener('visibilitychange', handleWakeAndFocus);
+      if (portRef.current) portRef.current.disconnect();
+    };
   }, []);
 
+  // Track window resizing/zooming to trigger re-calculations
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({ w: window.innerWidth, h: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-  // Sync local states with global worker settings ONLY when not interacting
+  // 2. ZOOM RELATIVE POSITIONING FIX
+  // Map the globally saved percentages back to the current tab's exact dimensions
   useEffect(() => {
     if (!isDragging && data?.settings?.position) {
-      // If the background worker sends its hardcoded default (20, 20), calculate the bottom-middle instead!
-      if (data.settings.position.x === 20 && data.settings.position.y === 20) {
+      const pos = data.settings.position as any; 
+
+      // If no custom drag has happened yet (worker default)
+      if (pos.x === 20 && pos.y === 20 && pos.pctX === undefined) {
         setLocalPos({
-          x: Math.max(0, window.innerWidth / 2 - (localSize.width / 2)),
-          y: Math.max(0, window.innerHeight - localSize.height - 30)
+          x: Math.max(0, windowSize.w / 2 - (localSize.width / 2)),
+          y: Math.max(0, windowSize.h - localSize.height - 30)
         });
-      } else {
-        // Otherwise, use the user's specifically saved custom position
-        setLocalPos(data.settings.position);
+      } 
+      // If we have saved relative percentages from a previous drag
+      else if (pos.pctX !== undefined && pos.pctY !== undefined) {
+        const mappedX = pos.pctX * Math.max(0, windowSize.w - localSize.width);
+        const mappedY = pos.pctY * Math.max(0, windowSize.h - localSize.height);
+        setLocalPos(clampPosition(mappedX, mappedY, localSize.width, localSize.height));
+      } 
+      // Legacy fallback
+      else {
+        setLocalPos(clampPosition(pos.x, pos.y, localSize.width, localSize.height));
       }
     }
+    
     if (!isResizing && data?.settings?.size) {
       setLocalSize(data.settings.size);
     }
-  }, [data?.settings?.position, data?.settings?.size, isDragging, isResizing, localSize.width, localSize.height]);
-
+  }, [data?.settings?.position, data?.settings?.size, isDragging, isResizing, localSize.width, localSize.height, windowSize]);
 
   const handleDragStart = (e: React.MouseEvent) => {
     if (data?.settings?.isLocked) return;
@@ -92,10 +159,9 @@ const OverlayApp = () => {
 
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging) {
-        setLocalPos({
-          x: e.clientX - dragStartOffset.current.x,
-          y: e.clientY - dragStartOffset.current.y
-        });
+        const rawX = e.clientX - dragStartOffset.current.x;
+        const rawY = e.clientY - dragStartOffset.current.y;
+        setLocalPos(clampPosition(rawX, rawY, localSize.width, localSize.height));
       } else if (isResizing) {
         setLocalSize({
           width: Math.max(280, resizeStartRef.current.startWidth + (e.clientX - resizeStartRef.current.startX)),
@@ -107,8 +173,21 @@ const OverlayApp = () => {
     const handleMouseUp = (e: MouseEvent) => {
       if (isDragging) {
         setIsDragging(false);
-        const finalPos = { x: e.clientX - dragStartOffset.current.x, y: e.clientY - dragStartOffset.current.y };
-        if (portRef.current) portRef.current.postMessage({ type: 'UPDATE_POSITION', payload: finalPos });
+        const rawX = e.clientX - dragStartOffset.current.x;
+        const rawY = e.clientY - dragStartOffset.current.y;
+        const finalPos = clampPosition(rawX, rawY, localSize.width, localSize.height);
+        
+        // Calculate the screen percentage based on available real estate
+        const pctX = finalPos.x / Math.max(1, window.innerWidth - localSize.width);
+        const pctY = finalPos.y / Math.max(1, window.innerHeight - localSize.height);
+
+        // Inject the proportional ratios into the payload
+        if (portRef.current) {
+          portRef.current.postMessage({ 
+            type: 'UPDATE_POSITION', 
+            payload: { x: finalPos.x, y: finalPos.y, pctX, pctY } 
+          });
+        }
       }
       if (isResizing) {
         setIsResizing(false);
@@ -125,8 +204,7 @@ const OverlayApp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing]);
-
+  }, [isDragging, isResizing, localSize.width, localSize.height]);
 
   if (!data || !data.song) return null;
 
@@ -196,7 +274,6 @@ const OverlayApp = () => {
         width: `${localSize.width}px`,
         height: `${localSize.height}px`,
         pointerEvents: settings?.isLocked ? 'none' : 'auto',
-        // Disable transitions during drag/resize so the box perfectly hugs the mouse cursor
         transition: (isDragging || isResizing) ? 'none' : 'background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease'
       }}
     >
@@ -218,7 +295,6 @@ const OverlayApp = () => {
             marginLeft: 'auto'
           }}
         >
-
           {/* Previous Button */}
           <button
             onClick={() => chrome.runtime.sendMessage({ type: 'PREV_SONG' }).catch(() => { })}
@@ -349,7 +425,6 @@ const OverlayApp = () => {
               <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.41L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />
             </svg>
           </button>
-
         </div>
       </div>
 
