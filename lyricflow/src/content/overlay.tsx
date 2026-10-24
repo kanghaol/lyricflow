@@ -5,11 +5,27 @@ import styles from './overlay.css?inline';
 
 const PRE_ROLL_OFFSET_MS = 1400;
 
-const OverlayApp = () => {
+const OverlayApp = ({ pipMode = false, pipWindow = null }: { pipMode?: boolean; pipWindow?: Window | null }) => {
   const [data, setData] = useState<SyncPayload | null>(null);
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const [currentDomain, setCurrentDomain] = useState<string | null>(null);
   const prevTrackRef = useRef<string>('');
+  const [isPipActive, setIsPipActive] = useState<boolean>(false);
+
+  // PiP window size, measured directly from the PiP window itself. This is
+  // what makes the overlay grow/shrink with the PiP window: the PiP instance
+  // listens to the PiP window's own resize events instead of relying on CSS
+  // viewport units. (Note: plain `window` here would be the opener tab, not
+  // the PiP window, which is why the window object arrives as a prop.)
+  const [pipSize, setPipSize] = useState(() => (pipWindow ? { w: pipWindow.innerWidth, h: pipWindow.innerHeight } : { w: 0, h: 0 }));
+
+  useEffect(() => {
+    if (!pipMode || !pipWindow) return;
+    const updatePipSize = () => setPipSize({ w: pipWindow.innerWidth, h: pipWindow.innerHeight });
+    updatePipSize();
+    pipWindow.addEventListener('resize', updatePipSize);
+    return () => pipWindow.removeEventListener('resize', updatePipSize);
+  }, [pipMode, pipWindow]);
 
   // Local UI State for Dragging & Resizing
   const [isDragging, setIsDragging] = useState(false);
@@ -115,15 +131,11 @@ const OverlayApp = () => {
           x: Math.max(0, windowSize.w / 2 - (localSize.width / 2)),
           y: Math.max(0, windowSize.h - localSize.height - 30)
         });
-      } 
-      // If we have saved relative percentages from a previous drag
-      else if (pos.pctX !== undefined && pos.pctY !== undefined) {
+      } else if (pos.pctX !== undefined && pos.pctY !== undefined) {
         const mappedX = pos.pctX * Math.max(0, windowSize.w - localSize.width);
         const mappedY = pos.pctY * Math.max(0, windowSize.h - localSize.height);
         setLocalPos(clampPosition(mappedX, mappedY, localSize.width, localSize.height));
-      } 
-      // Legacy fallback
-      else {
+      } else {
         setLocalPos(clampPosition(pos.x, pos.y, localSize.width, localSize.height));
       }
     }
@@ -133,15 +145,79 @@ const OverlayApp = () => {
     }
   }, [data?.settings?.position, data?.settings?.size, isDragging, isResizing, localSize.width, localSize.height, windowSize]);
 
+  // 3. COMPACT DOCUMENT PICTURE-IN-PICTURE (PiP) HANDLER
+  const handleTogglePip = async () => {
+    const win = window as any;
+
+    if (!('documentPictureInPicture' in win)) {
+      alert('Document Picture-in-Picture is not supported in this browser version.');
+      return;
+    }
+
+    if (win.documentPictureInPicture.window) {
+      win.documentPictureInPicture.window.close();
+      return;
+    }
+
+    try {
+      // Force the PiP window to match your widget's exact compact dimensions!
+      const pipWindow = await win.documentPictureInPicture.requestWindow({
+        width: localSize.width,
+        height: localSize.height,
+        disallowReturnToOpener: false
+      });
+
+      // Copy stylesheet references & rules
+      [...document.styleSheets].forEach((styleSheet) => {
+        try {
+          const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+          const style = document.createElement('style');
+          style.textContent = cssRules;
+          pipWindow.document.head.appendChild(style);
+        } catch (e) {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.type = styleSheet.type;
+          link.href = styleSheet.href || '';
+          pipWindow.document.head.appendChild(link);
+        }
+      });
+
+      // Inject bundled module styles
+      const customStyle = document.createElement('style');
+      customStyle.textContent = styles;
+      pipWindow.document.head.appendChild(customStyle);
+
+      const pipTarget = pipWindow.document.createElement('div');
+      pipTarget.id = 'lyricflow-pip-root';
+      pipWindow.document.body.appendChild(pipTarget);
+      pipWindow.document.body.style.margin = '0';
+      pipWindow.document.body.style.overflow = 'hidden';
+      pipWindow.document.body.style.backgroundColor = '#121212';
+
+      const pipRoot = createRoot(pipTarget);
+      pipRoot.render(<OverlayApp pipMode pipWindow={pipWindow} />);
+
+      setIsPipActive(true);
+
+      pipWindow.addEventListener('pagehide', () => {
+        pipRoot.unmount();
+        setIsPipActive(false);
+      });
+    } catch (err) {
+      console.error('Failed to open Document Picture-in-Picture:', err);
+    }
+  };
+
   const handleDragStart = (e: React.MouseEvent) => {
-    if (data?.settings?.isLocked) return;
+    if (data?.settings?.isLocked || isPipActive || pipMode) return;
     setIsDragging(true);
     dragStartOffset.current = { x: e.clientX - localPos.x, y: e.clientY - localPos.y };
     e.stopPropagation();
   };
 
   const handleResizeStart = (e: React.MouseEvent) => {
-    if (data?.settings?.isLocked) return;
+    if (data?.settings?.isLocked || isPipActive || pipMode) return;
     setIsResizing(true);
     resizeStartRef.current = {
       startWidth: localSize.width,
@@ -269,16 +345,27 @@ const OverlayApp = () => {
     <div
       className={containerClasses}
       style={{
-        left: `${localPos.x}px`,
-        top: `${localPos.y}px`,
-        width: `${localSize.width}px`,
-        height: `${localSize.height}px`,
+        // Inside the PiP window, fill the window. On the original tab, hide
+        // completely while PiP is open.
+        display: pipMode ? 'block' : (isPipActive ? 'none' : 'block'),
+        position: pipMode ? 'relative' : 'fixed',
+        left: pipMode ? '0px' : `${localPos.x}px`,
+        top: pipMode ? '0px' : `${localPos.y}px`,
+        // PiP size comes from the PiP window's own resize events (pipSize);
+        // vw/vh is only the first-frame fallback before the listener fires.
+        width: pipMode ? (pipSize.w ? `${pipSize.w}px` : '100vw') : `${localSize.width}px`,
+        height: pipMode ? (pipSize.h ? `${pipSize.h}px` : '100vh') : `${localSize.height}px`,
+        minWidth: pipMode ? '0px' : undefined,
+        minHeight: pipMode ? '0px' : undefined,
+        boxSizing: pipMode ? 'border-box' : undefined,
+        maxHeight: pipMode ? 'none' : undefined,
+        maxWidth: pipMode ? 'none' : undefined,
         pointerEvents: settings?.isLocked ? 'none' : 'auto',
         transition: (isDragging || isResizing) ? 'none' : 'background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease'
       }}
     >
       <div
-        className={`lyricflow-header ${!settings?.isLocked ? 'is-draggable' : ''}`}
+        className={`lyricflow-header ${!settings?.isLocked && !isPipActive && !pipMode ? 'is-draggable' : ''}`}
         onMouseDown={handleDragStart}
       >
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -351,6 +438,21 @@ const OverlayApp = () => {
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+            </svg>
+          </button>
+
+          {/* Picture-in-Picture (PiP) Button */}
+          <button
+            className="control-btn"
+            onClick={handleTogglePip}
+            onMouseDown={e => e.stopPropagation()}
+            style={{ background: 'transparent', border: 'none', color: (pipMode || isPipActive) ? '#aef56c' : 'white', cursor: 'pointer', opacity: 0.8, transition: 'all 0.2s', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
+            title={(pipMode || isPipActive) ? "Return to Tab Overlay" : "Pop Out to Always-on-Top Window (PiP)"}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 11h-8v6h8v-6zm4-8H1c-.55 0-1 .45-1 1v16c0 .55.45 1 1 1h22c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zm-2 16H3V5h18v14z" />
             </svg>
           </button>
 
@@ -459,16 +561,23 @@ const OverlayApp = () => {
       </div>
 
       {/* Resize Handle at Bottom Right */}
-      <div className="resize-handle" onMouseDown={handleResizeStart}>
-        <svg width="10" height="10" viewBox="0 0 10 10" style={{ fill: '#aef56c' }}>
-          <path d="M10 10H0V8.5h8.5V0H10v10z" />
-        </svg>
-      </div>
+      {!pipMode && !isPipActive && (
+        <div className="resize-handle" onMouseDown={handleResizeStart}>
+          <svg width="10" height="10" viewBox="0 0 10 10" style={{ fill: '#aef56c' }}>
+            <path d="M10 10H0V8.5h8.5V0H10v10z" />
+          </svg>
+        </div>
+      )}
     </div>
   );
 };
 
 // --- Shadow DOM Initialization ---
+// Guard against double injection (e.g. the content script re-running after an
+// extension reload, which would otherwise leave a dead, frozen overlay behind).
+if (document.getElementById('lyricflow-extension-root')) {
+  throw new Error('LyricFlow: overlay already injected');
+}
 const host = document.createElement('div');
 host.id = 'lyricflow-extension-root';
 document.body.appendChild(host);
