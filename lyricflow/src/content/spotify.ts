@@ -1,4 +1,9 @@
 //spotify.ts
+// Fix 2026-11-20: Spotify renamed the now-playing testids.
+// Old: context-item-info-title / context-item-info-subtitles (gone from the DOM)
+// New: context-item-link (song title) / now-playing-widget-v2-byline (artist)
+// Verified live on open.spotify.com: 'MISS ME' / 'keshi'
+// Old selectors kept as fallback in case Spotify rolls back / serves the old UI.
 import type { SongInfo } from '../types';
 
 let port: chrome.runtime.Port;
@@ -42,8 +47,10 @@ function getPlaybackProgressMs(): number {
 }
 
 function sendPlaybackUpdate() {
-  const titleEl = document.querySelector('[data-testid="context-item-info-title"]');
-  const artistEl = document.querySelector('[data-testid="context-item-info-subtitles"]');
+  const titleEl = document.querySelector('[data-testid="context-item-link"]')
+    || document.querySelector('[data-testid="context-item-info-title"]');
+  const artistEl = document.querySelector('[data-testid="now-playing-widget-v2-byline"]')
+    || document.querySelector('[data-testid="context-item-info-subtitles"]');
   const playButton = document.querySelector('[data-testid="control-button-playpause"]');
 
   if (titleEl && artistEl) {
