@@ -1,6 +1,6 @@
 // src/background/index.ts
 import { fetchLyrics } from '../api/lrclib';
-import type { SongInfo, LyricLine, UISettings } from '../types';
+import type { SongInfo, LyricLine, UISettings, SpotifyStatus } from '../types';
 import { LyricCache } from '../utils/cache';
 
 let spotifyPort: chrome.runtime.Port | null = null;
@@ -44,6 +44,11 @@ function saveAndBroadcastSettings() {
 let lastKnownSong: SongInfo | null = null;
 let lastKnownLyrics: LyricLine[] | null = null;
 
+// Spotify detection state (see src/types/index.ts). The Spotify content
+// script reports 'ok' / 'idle' / 'unreadable'; 'no-spotify' means no
+// Spotify tab is connected at all.
+let spotifyStatus: SpotifyStatus = { state: 'no-spotify', isPlaying: false };
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Listen for global media commands sent from the overlay buttons
@@ -59,17 +64,74 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
+// Build the payload every overlay receives. Fail loudly (requirement 3):
+// when Spotify is playing but unreadable, broadcast a synthetic warning
+// song instead of song: null, so the overlay shows
+// "Couldn't read song from Spotify" instead of silently returning null.
+// This synthetic song is only ever in the broadcast payload — it never
+// overwrites lastKnownSong and never triggers a lyrics fetch.
+function buildPayload(isEnabled: boolean) {
+  if (!isEnabled) {
+    return {
+      song: null,
+      lyrics: null,
+      settings: globalSettings,
+      spotifyStatus: { state: 'idle', isPlaying: false } as SpotifyStatus,
+    };
+  }
+
+  if (spotifyStatus.state === 'unreadable') {
+    return {
+      song: {
+        title: "Couldn't read song from Spotify",
+        artist: 'Spotify changed its layout',
+        progressMs: 0,
+        isPlaying: false,
+      } as SongInfo,
+      lyrics: [
+        {
+          timeMs: 0,
+          text: 'LyricFlow is trying new selectors — detection should resume automatically.',
+        },
+      ] as LyricLine[],
+      settings: globalSettings,
+      spotifyStatus,
+    };
+  }
+
+  return {
+    song: lastKnownSong,
+    lyrics: lastKnownLyrics,
+    settings: globalSettings,
+    spotifyStatus,
+  };
+}
+
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name === 'spotify') {
     spotifyPort = port;
+    spotifyStatus = { state: 'idle', isPlaying: false };
     port.onMessage.addListener((msg: any) => {
       if (msg.type === 'SONG_CHANGED') {
+        spotifyStatus = { state: 'ok', isPlaying: msg.payload?.isPlaying ?? false };
         handleSpotifyUpdate(msg.payload);
+      } else if (msg.type === 'SPOTIFY_STATUS') {
+        // Only accept the states the Spotify content script actually sends.
+        const state = msg.payload?.state;
+        if (state === 'ok' || state === 'idle' || state === 'unreadable') {
+          spotifyStatus = {
+            state,
+            isPlaying: !!msg.payload?.isPlaying,
+            detail: msg.payload?.detail,
+          };
+          broadcastSync();
+        }
       }
     });
 
     port.onDisconnect.addListener(() => {
       spotifyPort = null;
+      spotifyStatus = { state: 'no-spotify', isPlaying: false };
       lastKnownSong = null;
       lastKnownLyrics = null;
       broadcastSync();
@@ -79,23 +141,12 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     overlayPorts.add(port);
 
     // Immediately send the current state to the newly opened tab
-    if (lastKnownSong) {
-      chrome.storage.local.get(['extensionEnabled'], (result) => {
-        const isEnabled = result.extensionEnabled !== false;
-        port.postMessage({
-          type: 'SYNC_UPDATE',
-          payload: isEnabled ? {
-            song: lastKnownSong,
-            lyrics: lastKnownLyrics,
-            settings: globalSettings
-          } : {
-            song: null,
-            lyrics: null,
-            settings: globalSettings
-          }
-        });
-      });
-    }
+    // v2: always send it — including the unreadable warning — not only
+    // when a song is already known.
+    chrome.storage.local.get(['extensionEnabled'], (result) => {
+      const isEnabled = result.extensionEnabled !== false;
+      port.postMessage({ type: 'SYNC_UPDATE', payload: buildPayload(isEnabled) });
+    });
 
     // Listen for UI toggle requests from any tab
     port.onMessage.addListener((msg: any) => {
@@ -103,18 +154,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         // SLEEP MODE FIX: Send the current state immediately to the tab requesting a sync
         chrome.storage.local.get(['extensionEnabled'], (result) => {
           const isEnabled = result.extensionEnabled !== false;
-          port.postMessage({
-            type: 'SYNC_UPDATE',
-            payload: isEnabled ? {
-              song: lastKnownSong,
-              lyrics: lastKnownLyrics,
-              settings: globalSettings
-            } : {
-              song: null,
-              lyrics: null,
-              settings: globalSettings
-            }
-          });
+          port.postMessage({ type: 'SYNC_UPDATE', payload: buildPayload(isEnabled) });
         });
       } else if (msg.type === 'TOGGLE_TRANSPARENT') {
         globalSettings.isTransparent = !globalSettings.isTransparent;
@@ -278,16 +318,7 @@ async function handleSpotifyUpdate(songInfo: SongInfo) {
 function broadcastSync() {
   chrome.storage.local.get(['extensionEnabled'], (result) => {
     const isEnabled = result.extensionEnabled !== false;
-
-    const payload = isEnabled ? {
-      song: lastKnownSong,
-      lyrics: lastKnownLyrics,
-      settings: globalSettings
-    } : {
-      song: null,
-      lyrics: null,
-      settings: globalSettings
-    };
+    const payload = buildPayload(isEnabled);
 
     for (const port of overlayPorts) {
       port.postMessage({ type: 'SYNC_UPDATE', payload });

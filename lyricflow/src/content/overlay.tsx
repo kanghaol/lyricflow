@@ -328,6 +328,10 @@ const OverlayApp = ({ pipMode = false, pipWindow = null }: { pipMode?: boolean; 
   if (settings?.isTransparent) {
     containerClasses += ' is-transparent';
   }
+  
+  if (data.spotifyStatus?.state === 'unreadable') {
+    containerClasses += ' is-warning';
+  }
 
   if (settings?.isLocked) {
     containerClasses += ' is-locked';

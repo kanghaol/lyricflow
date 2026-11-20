@@ -123,6 +123,13 @@
   opacity: 1; 
 }
 
+.lyricflow-container.is-warning {
+  border-color: #ff6b6b;
+}
+
+.lyricflow-container.is-warning .lyricflow-header {
+  background-color: #3a1f1f;
+}
 
 /* Locked height wrapper to prevent vertical layout snapping */
 .lyric-body {
